@@ -117,8 +117,9 @@
 				width: auto;
 				height: auto;
 				box-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
-				animation: pageFlip 0.5s ease-in-out;
+				animation: pageFlip 0.3s ease-in-out;
 				cursor: grab;
+				display: block;
 			}
 
 			#pdfCanvas:active {
@@ -174,8 +175,8 @@
 		</div>
 
 		<script>
-			// URL del PDF desde CloudFlare R2 CDN
-			const PDF_URL = 'https://pub-9d3a5c326453460d83ad0565c02e3b18.r2.dev/catalogo_casio_precios_compressed.pdf';
+			// URL del PDF local comprimido
+			const PDF_URL = '/catalogo_casio_precios_compressed.pdf';
 
 			pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
@@ -219,8 +220,6 @@
 						return;
 					}
 
-					container.innerHTML = '<div class="loading">Cargando página...</div>';
-
 					const page = await pdfDoc.getPage(pageNum);
 					const viewport = page.getViewport({ scale: zoom });
 
@@ -244,9 +243,9 @@
 					container.innerHTML = '';
 					container.appendChild(canvas);
 
-					// Precargar páginas adyacentes en background
 					preloadAdjacentPages(pageNum);
 				} catch (error) {
+					console.error('PDF render error:', error);
 					container.innerHTML = `<div class="loading" style="color: #999;">No se pudo renderizar la página ${pageNum}</div>`;
 				} finally {
 					isRendering = false;
