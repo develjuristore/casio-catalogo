@@ -1,0 +1,239 @@
+---
+---
+
+<!doctype html>
+<html lang="es">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width" />
+		<title>Catálogo CASIO</title>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+		<style>
+			* {
+				margin: 0;
+				padding: 0;
+				box-sizing: border-box;
+			}
+
+			body {
+				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+				background: #f5f5f5;
+				color: #333;
+				height: 100vh;
+				display: flex;
+				flex-direction: column;
+			}
+
+			.toolbar {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				padding: 12px 20px;
+				background: white;
+				border-bottom: 1px solid #ddd;
+				flex-wrap: wrap;
+				gap: 10px;
+			}
+
+			.toolbar-left, .toolbar-center, .toolbar-right {
+				display: flex;
+				align-items: center;
+				gap: 10px;
+			}
+
+			.toolbar-center {
+				flex: 1;
+				justify-content: center;
+			}
+
+			button {
+				background: #0066cc;
+				color: white;
+				border: none;
+				padding: 8px 14px;
+				border-radius: 4px;
+				cursor: pointer;
+				font-size: 13px;
+				font-weight: 600;
+				transition: all 0.2s ease;
+			}
+
+			button:hover:not(:disabled) {
+				background: #0052a3;
+				transform: translateY(-1px);
+			}
+
+			button:disabled {
+				opacity: 0.5;
+				cursor: not-allowed;
+			}
+
+			.page-input {
+				width: 50px;
+				padding: 6px 10px;
+				border: 1px solid #ddd;
+				border-radius: 4px;
+				background: #f5f5f5;
+				color: #333;
+				font-size: 13px;
+				text-align: center;
+			}
+
+			.page-info {
+				font-size: 12px;
+				color: #666;
+				font-weight: 500;
+			}
+
+			.controls-group {
+				display: flex;
+				align-items: center;
+				gap: 6px;
+			}
+
+			.zoom-value {
+				font-size: 12px;
+				color: #666;
+				min-width: 40px;
+				text-align: center;
+			}
+
+			#pdfContainer {
+				flex: 1;
+				display: flex;
+				justify-content: center;
+				align-items: flex-start;
+				padding: 20px;
+				background: #f5f5f5;
+				overflow: auto;
+			}
+
+			#pdfCanvas {
+				max-width: 100%;
+				height: auto;
+				box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+			}
+
+			.loading {
+				text-align: center;
+				padding: 20px;
+				color: #666;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="toolbar">
+			<div class="toolbar-left">
+				<button id="prevBtn">◀ Anterior</button>
+				<button id="nextBtn">Siguiente ▶</button>
+			</div>
+
+			<div class="toolbar-center">
+				<input type="number" id="pageInput" class="page-input" min="1" />
+				<span class="page-info">de <span id="totalPages">0</span> págs</span>
+			</div>
+
+			<div class="toolbar-right">
+				<div class="controls-group">
+					<button id="zoomOut">−</button>
+					<span class="zoom-value" id="zoomValue">100%</span>
+					<button id="zoomIn">+</button>
+					<button id="resetZoom">⟲</button>
+				</div>
+				<a id="downloadBtn" href="/catalogo_casio_precios.pdf" download style="background: #10b981; color: white; padding: 8px 14px; border-radius: 4px; text-decoration: none; font-size: 13px; font-weight: 600;">⬇ Descargar</a>
+			</div>
+		</div>
+
+		<div id="pdfContainer">
+			<canvas id="pdfCanvas"></canvas>
+		</div>
+
+		<script>
+			pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+			let pdfDoc = null;
+			let currentPage = 1;
+			let zoom = 1;
+			let canvas = document.getElementById('pdfCanvas');
+			let ctx = canvas.getContext('2d');
+			const container = document.getElementById('pdfContainer');
+
+			async function loadPdf() {
+				try {
+					pdfDoc = await pdfjsLib.getDocument('/catalogo_casio_precios.pdf').promise;
+					document.getElementById('totalPages').textContent = pdfDoc.numPages;
+					document.getElementById('pageInput').max = pdfDoc.numPages;
+					renderPage(1);
+				} catch (error) {
+					container.innerHTML = `<div class="loading" style="color: red;">Error al cargar PDF: ${error.message}</div>`;
+				}
+			}
+
+			async function renderPage(pageNum) {
+				if (!pdfDoc || pageNum < 1 || pageNum > pdfDoc.numPages) return;
+
+				container.innerHTML = '<div class="loading">Cargando página...</div>';
+
+				try {
+					const page = await pdfDoc.getPage(pageNum);
+					const viewport = page.getViewport({ scale: zoom });
+
+					canvas.width = viewport.width;
+					canvas.height = viewport.height;
+
+					await page.render({
+						canvasContext: ctx,
+						viewport: viewport
+					}).promise;
+
+					currentPage = pageNum;
+					document.getElementById('pageInput').value = pageNum;
+					container.innerHTML = '';
+					container.appendChild(canvas);
+				} catch (error) {
+					container.innerHTML = `<div class="loading" style="color: #999;">No se pudo renderizar la página ${pageNum}</div>`;
+				}
+			}
+
+			document.getElementById('prevBtn').addEventListener('click', () => {
+				if (currentPage > 1) renderPage(currentPage - 1);
+			});
+
+			document.getElementById('nextBtn').addEventListener('click', () => {
+				if (pdfDoc && currentPage < pdfDoc.numPages) renderPage(currentPage + 1);
+			});
+
+			document.getElementById('pageInput').addEventListener('change', (e) => {
+				const pageNum = parseInt(e.target.value) || 1;
+				if (pageNum > 0 && pdfDoc && pageNum <= pdfDoc.numPages) {
+					renderPage(pageNum);
+				}
+			});
+
+			document.getElementById('zoomIn').addEventListener('click', () => {
+				zoom = Math.min(zoom + 0.2, 3);
+				document.getElementById('zoomValue').textContent = Math.round(zoom * 100) + '%';
+				renderPage(currentPage);
+			});
+
+			document.getElementById('zoomOut').addEventListener('click', () => {
+				zoom = Math.max(zoom - 0.2, 0.5);
+				document.getElementById('zoomValue').textContent = Math.round(zoom * 100) + '%';
+				renderPage(currentPage);
+			});
+
+			document.getElementById('resetZoom').addEventListener('click', () => {
+				zoom = 1;
+				document.getElementById('zoomValue').textContent = '100%';
+				renderPage(currentPage);
+			});
+
+			document.addEventListener('keydown', (e) => {
+				if (e.key === 'ArrowRight') document.getElementById('nextBtn').click();
+				if (e.key === 'ArrowLeft') document.getElementById('prevBtn').click();
+			});
+
+			loadPdf();
+		</script>
+	</body>
+</html>
