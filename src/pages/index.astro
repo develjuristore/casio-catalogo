@@ -175,8 +175,8 @@
 		</div>
 
 		<script>
-			// URL del PDF local comprimido
-			const PDF_URL = '/catalogo_casio_precios_compressed.pdf';
+			// URL del PDF local
+			const PDF_URL = '/catalogo_casio_precios.pdf';
 
 			pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
@@ -191,11 +191,14 @@
 
 			async function loadPdf() {
 				try {
+					console.log('Cargando PDF desde:', PDF_URL);
 					pdfDoc = await pdfjsLib.getDocument(PDF_URL).promise;
+					console.log('PDF cargado. Páginas totales:', pdfDoc.numPages);
 					document.getElementById('totalPages').textContent = pdfDoc.numPages;
 					document.getElementById('pageInput').max = pdfDoc.numPages;
 					renderPage(1);
 				} catch (error) {
+					console.error('Error cargando PDF:', error);
 					container.innerHTML = `<div class="loading" style="color: red;">Error al cargar PDF: ${error.message}</div>`;
 				}
 			}
