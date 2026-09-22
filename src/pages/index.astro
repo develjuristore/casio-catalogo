@@ -19,9 +19,10 @@
 				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 				background: #f5f5f5;
 				color: #333;
-				height: 100vh;
+				height: 100dvh;
 				display: flex;
 				flex-direction: column;
+				overflow: hidden;
 			}
 
 			.toolbar {
@@ -102,16 +103,40 @@
 				flex: 1;
 				display: flex;
 				justify-content: center;
-				align-items: flex-start;
-				padding: 20px;
+				align-items: center;
+				padding: 10px;
 				background: #f5f5f5;
 				overflow: auto;
+				width: 100%;
+				height: 100%;
 			}
 
 			#pdfCanvas {
-				max-width: 100%;
+				max-width: 90vw;
+				max-height: 90dvh;
+				width: auto;
 				height: auto;
-				box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+				box-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
+				animation: pageFlip 0.5s ease-in-out;
+				cursor: grab;
+			}
+
+			#pdfCanvas:active {
+				cursor: grabbing;
+			}
+
+			@keyframes pageFlip {
+				0% {
+					opacity: 0;
+					transform: rotateY(90deg);
+				}
+				50% {
+					opacity: 0.7;
+				}
+				100% {
+					opacity: 1;
+					transform: rotateY(0deg);
+				}
 			}
 
 			.loading {
@@ -157,6 +182,8 @@
 			let canvas = document.getElementById('pdfCanvas');
 			let ctx = canvas.getContext('2d');
 			const container = document.getElementById('pdfContainer');
+			const pageCache = new Map(); // Cache de páginas renderizadas
+			let isRendering = false;
 
 			async function loadPdf() {
 				try {
@@ -170,11 +197,27 @@
 			}
 
 			async function renderPage(pageNum) {
-				if (!pdfDoc || pageNum < 1 || pageNum > pdfDoc.numPages) return;
+				if (!pdfDoc || pageNum < 1 || pageNum > pdfDoc.numPages || isRendering) return;
 
-				container.innerHTML = '<div class="loading">Cargando página...</div>';
+				isRendering = true;
 
 				try {
+					// Verificar si está en cache
+					const cacheKey = `${pageNum}-${Math.round(zoom * 100)}`;
+					if (pageCache.has(cacheKey)) {
+						const cachedCanvas = pageCache.get(cacheKey);
+						container.innerHTML = '';
+						container.appendChild(cachedCanvas.cloneNode(true));
+						currentPage = pageNum;
+						document.getElementById('pageInput').value = pageNum;
+						isRendering = false;
+						// Precargar páginas adyacentes
+						preloadAdjacentPages(pageNum);
+						return;
+					}
+
+					container.innerHTML = '<div class="loading">Cargando página...</div>';
+
 					const page = await pdfDoc.getPage(pageNum);
 					const viewport = page.getViewport({ scale: zoom });
 
@@ -186,12 +229,59 @@
 						viewport: viewport
 					}).promise;
 
+					// Guardar en cache (máximo 10 páginas)
+					if (pageCache.size > 10) {
+						const firstKey = pageCache.keys().next().value;
+						pageCache.delete(firstKey);
+					}
+					pageCache.set(cacheKey, canvas.cloneNode(true));
+
 					currentPage = pageNum;
 					document.getElementById('pageInput').value = pageNum;
 					container.innerHTML = '';
 					container.appendChild(canvas);
+
+					// Precargar páginas adyacentes en background
+					preloadAdjacentPages(pageNum);
 				} catch (error) {
 					container.innerHTML = `<div class="loading" style="color: #999;">No se pudo renderizar la página ${pageNum}</div>`;
+				} finally {
+					isRendering = false;
+				}
+			}
+
+			async function preloadAdjacentPages(pageNum) {
+				// Precargar página siguiente
+				if (pageNum < pdfDoc.numPages) {
+					const nextKey = `${pageNum + 1}-${Math.round(zoom * 100)}`;
+					if (!pageCache.has(nextKey)) {
+						try {
+							const page = await pdfDoc.getPage(pageNum + 1);
+							const tempCanvas = document.createElement('canvas');
+							const tempCtx = tempCanvas.getContext('2d');
+							const viewport = page.getViewport({ scale: zoom });
+							tempCanvas.width = viewport.width;
+							tempCanvas.height = viewport.height;
+							await page.render({ canvasContext: tempCtx, viewport }).promise;
+							pageCache.set(nextKey, tempCanvas);
+						} catch (e) {}
+					}
+				}
+				// Precargar página anterior
+				if (pageNum > 1) {
+					const prevKey = `${pageNum - 1}-${Math.round(zoom * 100)}`;
+					if (!pageCache.has(prevKey)) {
+						try {
+							const page = await pdfDoc.getPage(pageNum - 1);
+							const tempCanvas = document.createElement('canvas');
+							const tempCtx = tempCanvas.getContext('2d');
+							const viewport = page.getViewport({ scale: zoom });
+							tempCanvas.width = viewport.width;
+							tempCanvas.height = viewport.height;
+							await page.render({ canvasContext: tempCtx, viewport }).promise;
+							pageCache.set(prevKey, tempCanvas);
+						} catch (e) {}
+					}
 				}
 			}
 
@@ -211,16 +301,27 @@
 			});
 
 			document.getElementById('zoomIn').addEventListener('click', () => {
-				zoom = Math.min(zoom + 0.2, 3);
+				zoom = Math.min(zoom + 0.25, 5);
 				document.getElementById('zoomValue').textContent = Math.round(zoom * 100) + '%';
 				renderPage(currentPage);
 			});
 
 			document.getElementById('zoomOut').addEventListener('click', () => {
-				zoom = Math.max(zoom - 0.2, 0.5);
+				zoom = Math.max(zoom - 0.25, 0.5);
 				document.getElementById('zoomValue').textContent = Math.round(zoom * 100) + '%';
 				renderPage(currentPage);
 			});
+
+			// Zoom con rueda del mouse
+			document.getElementById('pdfContainer').addEventListener('wheel', (e) => {
+				if (e.ctrlKey) {
+					e.preventDefault();
+					const delta = e.deltaY > 0 ? -0.1 : 0.1;
+					zoom = Math.max(0.5, Math.min(5, zoom + delta));
+					document.getElementById('zoomValue').textContent = Math.round(zoom * 100) + '%';
+					renderPage(currentPage);
+				}
+			}, { passive: false });
 
 			document.getElementById('resetZoom').addEventListener('click', () => {
 				zoom = 1;
@@ -232,6 +333,38 @@
 				if (e.key === 'ArrowRight') document.getElementById('nextBtn').click();
 				if (e.key === 'ArrowLeft') document.getElementById('prevBtn').click();
 			});
+
+			// Soporte táctil para deslizar
+			let touchStartX = 0;
+			let touchEndX = 0;
+
+			container.addEventListener('touchstart', (e) => {
+				touchStartX = e.changedTouches[0].screenX;
+			}, false);
+
+			container.addEventListener('touchend', (e) => {
+				touchEndX = e.changedTouches[0].screenX;
+				handleSwipe();
+			}, false);
+
+			function handleSwipe() {
+				const swipeThreshold = 50; // Mínimo de píxeles para registrar desliz
+				const diff = touchStartX - touchEndX;
+
+				if (Math.abs(diff) > swipeThreshold) {
+					if (diff > 0) {
+						// Desliz hacia la izquierda = siguiente página
+						if (pdfDoc && currentPage < pdfDoc.numPages) {
+							renderPage(currentPage + 1);
+						}
+					} else {
+						// Desliz hacia la derecha = página anterior
+						if (currentPage > 1) {
+							renderPage(currentPage - 1);
+						}
+					}
+				}
+			}
 
 			loadPdf();
 		</script>
